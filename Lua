@@ -1,0 +1,134 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+   Name = "Lucky Block & Utility Hub",
+   LoadingTitle = "กำลังโหลดระบบ...",
+   LoadingSubtitle = "by Assistant",
+   ConfigurationSaving = {
+      Enabled = false
+   },
+   Discord = {
+      Enabled = false
+   },
+   KeySystem = false
+})
+
+local Tab = Window:CreateTab("Main Control", 4483362458) -- Icon ID
+
+---------------------------------------------------------
+-- ฟังก์ชั่นที่ 1: เปิด/ปิดการกดเรียก Lucky Block อัตโนมัติ
+---------------------------------------------------------
+local autoSpawn = false
+local spawnTask = nil
+
+Tab:CreateToggle({
+   Name = "ฟังก์ชั่น 1: Auto Spawn Lucky Block",
+   CurrentValue = false,
+   Flag = "AutoLuckyBlock",
+   Callback = function(Value)
+      autoSpawn = Value
+      if autoSpawn then
+         spawnTask = task.spawn(function()
+            while autoSpawn do
+               local replicatedStorage = game:GetService("ReplicatedStorage")
+               local remote = replicatedStorage:WaitForChild("SpawnLuckyBlock", 5)
+               if remote then
+                  remote:FireServer()
+               end
+               task.wait(0.5) -- ปรับเวลาหน่วงระหว่างการเรียกได้ตามต้องการ (วินาที)
+            end
+         end)
+      else
+         if spawnTask then
+            task.cancel(spawnTask)
+            spawnTask = nil
+         end
+      end
+   end,
+})
+
+---------------------------------------------------------
+-- ฟังก์ชั่นที่ 2: ปรับความเร็วเดิน (Speed 1-100)
+---------------------------------------------------------
+Tab:CreateSlider({
+   Name = "ฟังก์ชั่น 2: WalkSpeed (1 - 100)",
+   Range = {1, 100},
+   Increment = 1,
+   Suffix = "Speed",
+   CurrentValue = 16,
+   Flag = "SpeedSlider",
+   Callback = function(Value)
+      local player = game.Players.LocalPlayer
+      if player.Character and player.Character:FindFirstChildOfClass("Humanoid") then
+         player.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = Value
+      end
+   end,
+})
+
+---------------------------------------------------------
+-- ฟังก์ชั่นที่ 3: ระบบบิน + ปรับความเร็วบิน (Fly Speed 1-50)
+---------------------------------------------------------
+local flying = false
+local flySpeed = 16
+local bodyGyro, bodyVelocity
+
+Tab:CreateToggle({
+   Name = "ฟังก์ชั่น 3: เปิด / ปิด ระบบบิน (Fly)",
+   CurrentValue = false,
+   Flag = "FlyToggle",
+   Callback = function(Value)
+      flying = Value
+      local player = game.Players.LocalPlayer
+      local character = player.Character or player.CharacterAdded:Wait()
+      local hrp = character:WaitForChild("HumanoidRootPart")
+
+      if flying then
+         bodyGyro = Instance.new("BodyGyro")
+         bodyGyro.P = 9e4
+         bodyGyro.maxTorque = Vector3.new(9e9, 9e9, 9e9)
+         bodyGyro.cframe = hrp.CFrame
+         bodyGyro.Parent = hrp
+
+         bodyVelocity = Instance.new("BodyVelocity")
+         bodyVelocity.velocity = Vector3.new(0, 0.1, 0)
+         bodyVelocity.maxForce = Vector3.new(9e9, 9e9, 9e9)
+         bodyVelocity.Parent = hrp
+
+         task.spawn(function()
+            while flying do
+               task.wait()
+               local camera = workspace.CurrentCamera
+               local moveDir = Vector3.zero
+               local UserInputService = game:GetService("UserInputService")
+
+               if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camera.CFrame.LookVector end
+               if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camera.CFrame.LookVector end
+               if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camera.CFrame.RightVector end
+               if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camera.CFrame.RightVector end
+               if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
+               if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0, 1, 0) end
+
+               bodyGyro.cframe = camera.CFrame
+               bodyVelocity.velocity = moveDir * flySpeed
+            end
+            if bodyGyro then bodyGyro:Destroy() end
+            if bodyVelocity then bodyVelocity:Destroy() end
+         end)
+      else
+         if bodyGyro then bodyGyro:Destroy() end
+         if bodyVelocity then bodyVelocity:Destroy() end
+      end
+   end,
+})
+
+Tab:CreateSlider({
+   Name = "ฟังก์ชั่น 3: Fly Speed (1 - 50)",
+   Range = {1, 50},
+   Increment = 1,
+   Suffix = "FlySpeed",
+   CurrentValue = 16,
+   Flag = "FlySpeedSlider",
+   Callback = function(Value)
+      flySpeed = Value
+   end,
+})
