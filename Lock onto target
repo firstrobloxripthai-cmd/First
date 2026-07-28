@@ -1,0 +1,155 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+   Name = "FPS Smooth Hub",
+   LoadingTitle = "กำลังโหลดระบบ...",
+   LoadingSubtitle = "by Assistant",
+   ConfigurationSaving = { Enabled = false },
+   Discord = { Enabled = false },
+   KeySystem = false
+})
+
+local Tab = Window:CreateTab("Combat Settings", 4483362458)
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+---------------------------------------------------------
+-- สร้างวงกลม FOV ผ่าน ScreenGui (เห็นชัวร์ 100% สายรุ้งขอบบาง)
+---------------------------------------------------------
+local gui = Instance.new("ScreenGui")
+gui.Name = "FOVCircleGui"
+gui.ResetOnSpawn = false
+gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local fovFrame = Instance.new("Frame")
+fovFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+fovFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+fovFrame.BackgroundTransparency = 1
+fovFrame.Visible = false
+fovFrame.Parent = gui
+
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = UDim.new(1, 0) -- ทำเป็นวงกลม
+uiCorner.Parent = fovFrame
+
+local uiStroke = Instance.new("UIStroke")
+uiStroke.Thickness = 1 -- ขอบบางมากๆ
+uiStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+uiStroke.Parent = fovFrame
+
+---------------------------------------------------------
+-- ค่าคอนฟิกเริ่มต้น
+---------------------------------------------------------
+local fovRadius = 150
+local fovEnabled = false
+local aimbotEnabled = false
+local smoothAmount = 0.15 -- ความนุ่มนวลในการดูด (ยิ่งน้อยยิ่งสมูธเหมือนคนเล่น)
+
+-- ระบบเปลี่ยนสีวงกลมสายรุ้ง (Chroma Loop)
+local hue = 0
+RunService.RenderStepped:Connect(function()
+   hue = (hue + 0.005) % 1
+   uiStroke.Color = Color3.fromHSV(hue, 1, 1)
+   
+   -- ปรับขนาดวงกลมตามค่า Slider
+   fovFrame.Size = UDim2.new(0, fovRadius * 2, 0, fovRadius * 2)
+   fovFrame.Visible = fovEnabled
+end)
+
+---------------------------------------------------------
+-- ค้นหาคนใกล้เป้ากลางหน้าจอมากที่สุด (เปลี่ยนเป้าไวเมื่อหันเมาส์)
+---------------------------------------------------------
+local function getClosestTarget()
+   local closestPlayer = nil
+   local shortestDistance = fovRadius -- ตรวจเฉพาะคนที่อยู่ในระยะวงกลม FOV
+
+   local centerScreen = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+   for _, player in pairs(Players:GetPlayers()) do
+      if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+         local hum = player.Character:FindFirstChildOfClass("Humanoid")
+         if hum and hum.Health > 0 then
+            local pos, onScreen = Camera:WorldToViewportPoint(player.Character.HumanoidRootPart.Position)
+            if onScreen then
+               local distance = (Vector2.new(pos.X, pos.Y) - centerScreen).Magnitude
+               if distance < shortestDistance then
+                  closestPlayer = player
+                  shortestDistance = distance
+               end
+            end
+         end
+      end
+   end
+   return closestPlayer
+end
+
+---------------------------------------------------------
+-- UI Control Settings
+---------------------------------------------------------
+Tab:CreateToggle({
+   Name = "ฟังชั่น 1: เปิดระบบล็อคดูดเป้า (Smooth Aim)",
+   CurrentValue = false,
+   Flag = "AimbotToggle",
+   Callback = function(Value)
+      aimbotEnabled = Value
+   end,
+})
+
+Tab:CreateToggle({
+   Name = "แสดงวงกลม FOV (สายรุ้ง)",
+   CurrentValue = false,
+   Flag = "FOVToggle",
+   Callback = function(Value)
+      fovEnabled = Value
+   end,
+})
+
+Tab:CreateSlider({
+   Name = "ปรับขนาดวงกลม FOV (1 - 350)",
+   Range = {1, 350},
+   Increment = 1,
+   Suffix = "px",
+   CurrentValue = 150,
+   Flag = "FOVSlider",
+   Callback = function(Value)
+      fovRadius = Value
+   end,
+})
+
+Tab:CreateSlider({
+   Name = "ปรับความแรงการดูดเป้า (ความนุ่มนวล)",
+   Range = {1, 10},
+   Increment = 1,
+   Suffix = "",
+   CurrentValue = 3,
+   Flag = "SmoothSlider",
+   Callback = function(Value)
+      -- ปรับสปีดความนุ่มในการหมุนกล้อง
+      smoothAmount = Value / 20 
+   end,
+})
+
+---------------------------------------------------------
+-- ระบบดูดเป้าเนียนๆ + เปลี่ยนเป้าทันทีที่สลับมุมมอง
+---------------------------------------------------------
+RunService.RenderStepped:Connect(function()
+   if aimbotEnabled and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+      local target = getClosestTarget()
+      if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+         local targetPos = target.Character.HumanoidRootPart.Position
+         local currentCFrame = Camera.CFrame
+         
+         -- คำนวณมุมมองเป้าหมาย
+         local targetCFrame = CFrame.new(currentCFrame.Position, targetPos)
+         
+         -- ใช้ CFrame:Lerp เพื่อให้การดูดกล้องนุ่มนวล ไม่ตุกติก ไม่หักคอทันที
+         Camera.CFrame = currentCFrame:Lerp(targetCFrame, smoothAmount)
+      end
+   end
+end)
