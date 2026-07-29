@@ -1,0 +1,514 @@
+-- โหลด Rayfield UI Library
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+   Name = "MM2 - Rayfield UI",
+   LoadingTitle = "MM2 Script Loading...",
+   LoadingSubtitle = "by Assistant",
+   ConfigurationSaving = {
+      Enabled = false
+   },
+   KeySystem = false
+})
+
+local MainTab = Window:CreateTab("Main Features", 4483362458)
+local SettingsTab = Window:CreateTab("FOV Settings", 4483362458)
+local TeleportTab = Window:CreateTab("Player Teleport", 4483362458)
+local FarmTab = Window:CreateTab("Auto Farm", 4483362458)
+
+-- ตัวแปรระบบต่างๆ
+local ESPEnabled = false
+local AutoGetGunEnabled = false
+local IsTeleporting = false
+
+local FOVEnabled = false
+local FOVRadius = 100
+
+local SelectedPlayerName = nil
+local PlayerDropdown = nil
+
+local AutoCoinEnabled = false
+local CoinFarmSpeed = 15
+
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Camera = Workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+-- ==========================================
+-- ⭕ สร้างวงกลม FOV
+-- ==========================================
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Visible = false
+FOVCircle.Transparency = 0.7
+FOVCircle.Color = Color3.fromRGB(255, 255, 255)
+FOVCircle.Thickness = 1.5
+FOVCircle.NumSides = 64
+FOVCircle.Filled = false
+
+-- ==========================================
+-- 🛠️ สร้างปุ่มลอย (Floating Action Button)
+-- ==========================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "MM2_FloatingShootGui"
+ScreenGui.ResetOnSpawn = false
+
+if gethui then
+    ScreenGui.Parent = gethui()
+elseif syn and syn.protect_gui then
+    syn.protect_gui(ScreenGui)
+    ScreenGui.Parent = game:GetService("CoreGui")
+else
+    ScreenGui.Parent = game:GetService("CoreGui")
+end
+
+local ShootButton = Instance.new("TextButton")
+ShootButton.Name = "ShootBtn"
+ShootButton.Parent = ScreenGui
+ShootButton.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
+ShootButton.Position = UDim2.new(0.8, 0, 0.5, 0)
+ShootButton.Size = UDim2.new(0, 65, 0, 65)
+ShootButton.Visible = false
+ShootButton.Text = "🔫"
+ShootButton.TextSize = 35
+ShootButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ShootButton.Active = true
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(1, 0)
+UICorner.Parent = ShootButton
+
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Thickness = 3
+UIStroke.Color = Color3.fromRGB(255, 255, 255)
+UIStroke.Parent = ShootButton
+
+-- ระบบลากปุ่มลอย (Draggable Button)
+local dragging, dragInput, dragStart, startPos
+local function update(input)
+    local delta = input.Position - dragStart
+    ShootButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+ShootButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = ShootButton.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+ShootButton.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
+-- ==========================================
+-- ⚙️ ฟังก์ชันหลักของระบบ MM2
+-- ==========================================
+
+local function GetPlayerRole(player)
+    if not player or not player.Character then return "Innocent" end
+    local backpack = player:FindFirstChild("Backpack")
+    local character = player.Character
+    
+    if (backpack and backpack:FindFirstChild("Knife")) or (character and character:FindFirstChild("Knife")) then
+        return "Murderer"
+    elseif (backpack and backpack:FindFirstChild("Gun")) or (character and character:FindFirstChild("Gun")) then
+        return "Sheriff"
+    end
+    return "Innocent"
+end
+
+local function GetTargetInFOV()
+    local target = nil
+    local shortestDistance = FOVRadius
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and GetPlayerRole(player) == "Murderer" then
+            local char = player.Character
+            if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChildOfClass("Humanoid").Health > 0 then
+                local hrp = char.HumanoidRootPart
+                local screenPoint, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+                
+                if onScreen then
+                    local mousePos = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+                    local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - mousePos).Magnitude
+                    
+                    if distance < shortestDistance then
+                        shortestDistance = distance
+                        target = char
+                    end
+                end
+            end
+        end
+    end
+    return target
+end
+
+local function UpdatePlayerESP()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local character = player.Character
+            local highlight = character:FindFirstChild("MM2_Highlight")
+            
+            if ESPEnabled then
+                if not highlight then
+                    highlight = Instance.new("Highlight")
+                    highlight.Name = "MM2_Highlight"
+                    highlight.Parent = character
+                    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                end
+                
+                local role = GetPlayerRole(player)
+                if role == "Murderer" then
+                    highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                    highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
+                elseif role == "Sheriff" then
+                    highlight.FillColor = Color3.fromRGB(0, 191, 255)
+                    highlight.OutlineColor = Color3.fromRGB(0, 191, 255)
+                else
+                    highlight.FillColor = Color3.fromRGB(0, 255, 0)
+                    highlight.OutlineColor = Color3.fromRGB(0, 255, 0)
+                end
+                
+                highlight.FillTransparency = 0.5
+                highlight.OutlineTransparency = 0
+                highlight.Enabled = true
+            else
+                if highlight then highlight.Enabled = false end
+            end
+        end
+    end
+end
+
+local function UpdateGunDropESP()
+    for _, obj in pairs(Workspace:GetChildren()) do
+        if obj.Name == "GunDrop" or (obj:IsA("Tool") and obj.Name == "Gun" and not obj.Parent:IsA("Model")) then
+            local highlight = obj:FindFirstChild("Gun_Highlight")
+            
+            if ESPEnabled then
+                if not highlight then
+                    highlight = Instance.new("Highlight")
+                    highlight.Name = "Gun_Highlight"
+                    highlight.Parent = obj
+                    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                end
+                
+                highlight.FillColor = Color3.fromRGB(255, 255, 0)
+                highlight.OutlineColor = Color3.fromRGB(255, 255, 0)
+                highlight.FillTransparency = 0.2
+                highlight.OutlineTransparency = 0
+                highlight.Enabled = true
+            else
+                if highlight then highlight.Enabled = false end
+            end
+        end
+    end
+end
+
+local function UpdateAllESP()
+    UpdatePlayerESP()
+    UpdateGunDropESP()
+end
+
+local function GetDroppedGun()
+    for _, obj in pairs(Workspace:GetChildren()) do
+        if obj.Name == "GunDrop" or (obj:IsA("Tool") and obj.Name == "Gun" and not obj.Parent:IsA("Model")) then
+            return obj
+        end
+    end
+    return nil
+end
+
+local function TeleportToGun()
+    if IsTeleporting then return end
+    local gun = GetDroppedGun()
+    local char = LocalPlayer.Character
+    if not gun or not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    if GetPlayerRole(LocalPlayer) == "Murderer" then return end
+    
+    IsTeleporting = true
+    local hrp = char.HumanoidRootPart
+    local originalCFrame = hrp.CFrame
+    local gunCFrame = gun:IsA("BasePart") and gun.CFrame or (gun:FindFirstChild("Handle") and gun.Handle.CFrame)
+    
+    if gunCFrame then
+        hrp.CFrame = gunCFrame
+        task.wait(0.1)
+        hrp.CFrame = originalCFrame
+    end
+    task.wait(0.5)
+    IsTeleporting = false
+end
+
+local function GetPlayerNames()
+    local names = {}
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(names, p.Name)
+        end
+    end
+    return names
+end
+
+-- ==========================================
+-- 🪙 ระบบบินเก็บเหรียญอัตโนมัติ (Auto Coin Farm)
+-- ==========================================
+local function GetNearestCoin()
+    local nearestCoin = nil
+    local shortestDistance = math.huge
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    local hrp = char.HumanoidRootPart
+
+    -- ค้นหาเหรียญใน Workspace (รวมถึงใน Container ของ MM2)
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj.Name == "Coin" or obj.Name == "CoinContainer" or obj.Name == "Snowflake" or obj.Name == "Candy" then
+            local coinPart = obj:IsA("BasePart") and obj or obj:FindFirstChild("Coin") or obj:FindFirstChildOfClass("BasePart")
+            if coinPart and coinPart:IsA("BasePart") and coinPart.Transparency < 1 then
+                local distance = (hrp.Position - coinPart.Position).Magnitude
+                if distance < shortestDistance then
+                    shortestDistance = distance
+                    nearestCoin = coinPart
+                end
+            end
+        end
+    end
+    return nearestCoin
+end
+
+-- ฟังก์ชัน Noclip ทะลุกำแพงชั่วคราวขณะฟาร์มเหรียญ
+RunService.Stepped:Connect(function()
+    if AutoCoinEnabled and LocalPlayer.Character then
+        for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end
+end)
+
+-- ลูปการบินไปเก็บเหรียญอย่างราบรื่น
+task.spawn(function()
+    while task.wait(0.1) do
+        if AutoCoinEnabled then
+            local char = LocalPlayer.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                local hrp = char.HumanoidRootPart
+                local targetCoin = GetNearestCoin()
+
+                if targetCoin then
+                    local distance = (hrp.Position - targetCoin.Position).Magnitude
+                    local duration = distance / (CoinFarmSpeed * 5) -- คำนวณเวลาการบินตาม Slider Speed
+                    
+                    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+                    local tween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCoin.CFrame})
+                    tween:Play()
+                    tween.Completed:Wait()
+                end
+            end
+        end
+    end
+end)
+
+-- ==========================================
+-- 🎯 ระบบยิงฆาตกรล็อคเป้า + FOV
+-- ==========================================
+ShootButton.MouseButton1Click:Connect(function()
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local gun = char:FindFirstChild("Gun")
+    local targetChar = GetTargetInFOV() or GetTargetInFOV()
+    
+    if gun and targetChar and targetChar:FindFirstChild("HumanoidRootPart") then
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local murHrp = targetChar.HumanoidRootPart
+        
+        hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(murHrp.Position.X, hrp.Position.Y, murHrp.Position.Z))
+        
+        if gun:FindFirstChild("KnifeServer") and gun.KnifeServer:FindFirstChild("ShootGun") then
+            gun.KnifeServer.ShootGun:FireServer(1, murHrp.Position, murHrp.CFrame)
+        else
+            gun:Activate()
+        end
+    end
+end)
+
+-- ==========================================
+-- 🎛️ UI DESIGN (Rayfield)
+-- ==========================================
+
+-- Tab 1: Main Features
+MainTab:CreateToggle({
+   Name = "Player & Gun ESP (มองทะลุบทบาท/ปืนตก)",
+   CurrentValue = false,
+   Flag = "ESP_Toggle",
+   Callback = function(Value)
+      ESPEnabled = Value
+      UpdateAllESP()
+   end,
+})
+
+MainTab:CreateToggle({
+   Name = "Auto Get Gun (วาร์ปเก็บปืนอัตโนมัติ)",
+   CurrentValue = false,
+   Flag = "AutoGun_Toggle",
+   Callback = function(Value)
+      AutoGetGunEnabled = Value
+   end,
+})
+
+-- Tab 2: FOV Settings
+SettingsTab:CreateToggle({
+   Name = "Enable FOV Circle",
+   CurrentValue = false,
+   Flag = "FOV_Toggle",
+   Callback = function(Value)
+      FOVEnabled = Value
+      FOVCircle.Visible = Value
+   end,
+})
+
+SettingsTab:CreateSlider({
+   Name = "FOV Radius (ขนาดวงกลม)",
+   Range = {1, 350},
+   Increment = 1,
+   CurrentValue = 100,
+   Flag = "FOV_Slider",
+   Callback = function(Value)
+      FOVRadius = Value
+      FOVCircle.Radius = Value
+   end,
+})
+
+-- Tab 3: Player Teleport
+PlayerDropdown = TeleportTab:CreateDropdown({
+   Name = "เลือกผู้เล่นที่ต้องการวาร์ปไปหา",
+   Options = GetPlayerNames(),
+   CurrentOption = "",
+   Flag = "Player_Dropdown",
+   Callback = function(Option)
+      SelectedPlayerName = Option[1] or Option
+   end,
+})
+
+TeleportTab:CreateButton({
+   Name = "🔄 อัปเดตรายชื่อผู้เล่นใหม่",
+   Callback = function()
+      if PlayerDropdown then
+         PlayerDropdown:Refresh(GetPlayerNames())
+      end
+   end,
+})
+
+TeleportTab:CreateButton({
+   Name = "⚡ วาร์ปไปหาผู้เล่นที่เลือก",
+   Callback = function()
+      if SelectedPlayerName then
+         local targetPlayer = Players:FindFirstChild(SelectedPlayerName)
+         if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local myChar = LocalPlayer.Character
+            if myChar and myChar:FindFirstChild("HumanoidRootPart") then
+               myChar.HumanoidRootPart.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 2)
+               
+               Rayfield:Notify({
+                  Title = "Teleport Success",
+                  Content = "วาร์ปไปหา " .. SelectedPlayerName .. " เรียบร้อยแล้ว",
+                  Duration = 3,
+               })
+            end
+         end
+      else
+         Rayfield:Notify({
+            Title = "Warning",
+            Content = "กรุณาเลือกผู้เล่นก่อนกดวาร์ป!",
+            Duration = 3,
+         })
+      end
+   end,
+})
+
+-- Tab 4: Auto Farm Coins
+FarmTab:CreateToggle({
+   Name = "Auto Coin Farm (เปิด/ปิด บินเก็บเหรียญอัตโนมัติ)",
+   CurrentValue = false,
+   Flag = "CoinFarm_Toggle",
+   Callback = function(Value)
+      AutoCoinEnabled = Value
+   end,
+})
+
+FarmTab:CreateSlider({
+   Name = "Farm Speed (ความเร็วการบินเก็บเหรียญ)",
+   Range = {1, 50},
+   Increment = 1,
+   CurrentValue = 15,
+   Flag = "FarmSpeed_Slider",
+   Callback = function(Value)
+      CoinFarmSpeed = Value
+   end,
+})
+
+-- ปุ่ม ESC สลับ ESP
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if input.KeyCode == Enum.KeyCode.Escape then
+        ESPEnabled = not ESPEnabled
+    end
+end)
+
+Players.PlayerAdded:Connect(function()
+    if PlayerDropdown then PlayerDropdown:Refresh(GetPlayerNames()) end
+end)
+
+Players.PlayerRemoving:Connect(function()
+    if PlayerDropdown then PlayerDropdown:Refresh(GetPlayerNames()) end
+end)
+
+RunService.RenderStepped:Connect(function()
+    local char = LocalPlayer.Character
+    if char then
+        local hasGun = char:FindFirstChild("Gun") ~= nil
+        ShootButton.Visible = hasGun
+    else
+        ShootButton.Visible = false
+    end
+    
+    if FOVEnabled then
+        FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    end
+end)
+
+task.spawn(function()
+    while task.wait(0.3) do
+        if ESPEnabled then
+            UpdateAllESP()
+        end
+        if AutoGetGunEnabled then
+            TeleportToGun()
+        end
+    end
+end)
+
+Rayfield:Notify({
+   Title = "MM2 Script Ready",
+   Content = "เพิ่มระบบ Auto Coin Farm เรียบร้อยแล้ว!",
+   Duration = 5,
+   Image = 4483362458,
+})
