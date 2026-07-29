@@ -1,0 +1,134 @@
+-- โหลด Rayfield UI Library
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- สร้าง Window
+local Window = Rayfield:CreateWindow({
+   Name = "Grow a Garden 2 | Safe & Humanized Mode",
+   LoadingTitle = "Loading Anti-Ban System...",
+   LoadingSubtitle = "by Assistant",
+   ConfigurationSaving = { Enabled = false },
+   KeySystem = false
+})
+
+local MainTab = Window:CreateTab("Pet Features", 4483362458)
+
+----------------------------------------------------------------
+-- ตัวแปรระบบ
+----------------------------------------------------------------
+local AutoBuyPet = false
+local AutoGuard = false
+local TargetDistance = 15
+
+local SelectedPets = {
+    ["Frog"] = true,
+    ["Bunny"] = true,
+    ["Owl"] = true,
+    ["Deer"] = true,
+    ["Robin"] = true,
+    ["Bee"] = true,
+    ["Monkey"] = true,
+    ["Golden Dragonfly"] = true,
+    ["Unicorn"] = true,
+    ["Black Dragon"] = true,
+    ["Raccoon"] = true,
+    ["Ice Serpent"] = true
+}
+
+----------------------------------------------------------------
+-- UI Controls: เลือกสัตว์
+----------------------------------------------------------------
+MainTab:CreateDropdown({
+   Name = "เลือกสัตว์เลี้ยงที่ต้องการซื้อ",
+   Options = {"Frog", "Bunny", "Owl", "Deer", "Robin", "Bee", "Monkey", "Golden Dragonfly", "Unicorn", "Black Dragon", "Raccoon", "Ice Serpent"},
+   CurrentOption = {"Frog", "Bunny", "Owl", "Deer", "Robin", "Bee", "Monkey", "Golden Dragonfly", "Unicorn", "Black Dragon", "Raccoon", "Ice Serpent"},
+   MultipleOptions = true,
+   Flag = "PetDropdown",
+   Callback = function(Options)
+      for k, _ in pairs(SelectedPets) do
+         SelectedPets[k] = false
+      end
+      for _, v in pairs(Options) do
+         SelectedPets[v] = true
+      end
+   end,
+})
+
+----------------------------------------------------------------
+-- ฟังก์ชันตรวจสอบชื่อสัตว์
+----------------------------------------------------------------
+local function IsTargetPet(name)
+   if not name then return false end
+   for petName, isSelected in pairs(SelectedPets) do
+      if isSelected and string.find(string.lower(name), string.lower(petName)) then
+         return true
+      end
+   end
+   return false
+end
+
+----------------------------------------------------------------
+-- ฟังก์ชันกรอง: ห้ามเข้าสวนคนอื่น 100%
+----------------------------------------------------------------
+local function IsInOtherPlayerBase(targetPart)
+   local current = targetPart
+   while current and current ~= workspace do
+      local nameLower = string.lower(current.Name)
+      if nameLower:find("plot") or nameLower:find("base") or nameLower:find("farm") or nameLower:find("house") or nameLower:find("owner") then
+         return true
+      end
+
+      for _, player in pairs(game.Players:GetPlayers()) do
+         if player ~= game.Players.LocalPlayer and nameLower:find(string.lower(player.Name)) then
+            return true
+         end
+      end
+
+      current = current.Parent
+   end
+   return false
+end
+
+----------------------------------------------------------------
+-- ฟังชั่น 1: วาปซื้อสัตว์แบบเนียนตา ป้องกันตรวจจับ (Anti-Ban Humanized)
+----------------------------------------------------------------
+MainTab:CreateToggle({
+   Name = "1. วาปซื้อสัตว์แบบปลอดภัย (ลดเสี่ยงแบนด้วยระบบหน่วงสุ่ม)",
+   CurrentValue = false,
+   Flag = "Toggle_AutoBuy",
+   Callback = function(Value)
+      AutoBuyPet = Value
+      task.spawn(function()
+         local purchasedPrompts = {}
+
+         while AutoBuyPet do
+            pcall(function()
+               local lp = game.Players.LocalPlayer
+               local char = lp.Character or lp.CharacterAdded:Wait()
+               local hrp = char:FindFirstChild("HumanoidRootPart")
+               if not hrp then return end
+
+               -- 1. สแกนหา Prompt ทั้งหมดในแมพ
+               local availableTargets = {}
+               for _, prompt in pairs(workspace:GetDescendants()) do
+                  if not AutoBuyPet then break end
+
+                  if prompt:IsA("ProximityPrompt") and not purchasedPrompts[prompt] then
+                     local parent = prompt.Parent
+                     local modelName = parent and parent.Name or ""
+                     local grandName = (parent and parent.Parent) and parent.Parent.Name or ""
+
+                     if IsTargetPet(modelName) or IsTargetPet(grandName) or IsTargetPet(prompt.Name) then
+                        local targetPart = parent:IsA("BasePart") and parent or parent:FindFirstChildWhichIsA("BasePart")
+                        
+                        if targetPart and not IsInOtherPlayerBase(targetPart) then
+                           table.insert(availableTargets, {prompt = prompt, part = targetPart})
+                        end
+                     end
+                  end
+               end
+
+               -- 2. วาปไปเก็บแบบสุ่มหน่วงเวลาเล็กน้อยเพื่อตบตา Anti-Cheat
+               if #availableTargets > 0 then
+                  for _, data in ipairs(availableTargets) do
+                     if not AutoBuyPet then break end
+              
